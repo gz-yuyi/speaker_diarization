@@ -56,6 +56,7 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           HUGGINGFACE_TOKEN=${{ secrets.HF_TOKEN }}
+          DOWNLOAD_MODEL=${{ secrets.HF_TOKEN && 'true' || 'false' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
