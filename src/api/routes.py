@@ -52,6 +52,18 @@ async def upload_audio(
     # Save uploaded file
     file_path = await file_manager.save_upload(task_id, audio_file)
 
+    # Initialize task record before starting async processing
+    task_manager.create_task(
+        task_id,
+        initial_data={
+            "status": "queued",
+            "message": "File uploaded. Awaiting processing.",
+            "progress": "0",
+            "original_filename": audio_file.filename,
+            "callback_url": callback_url or "",
+        }
+    )
+
     # Start processing task
     from src.workers.tasks import process_audio_task
     process_audio_task.delay(task_id, str(file_path), callback_url)
@@ -60,8 +72,8 @@ async def upload_audio(
 
     return TaskCreateResponse(
         task_id=task_id,
-        status="pending",
-        message="File uploaded successfully. Processing started.",
+        status="queued",
+        message="File uploaded successfully. Processing queued.",
         estimated_time_minutes=15
     )
 

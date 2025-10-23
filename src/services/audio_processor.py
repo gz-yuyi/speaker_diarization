@@ -82,10 +82,15 @@ class AudioProcessor:
             progress_callback(50, "Running speaker diarization...")
 
         # Run diarization
-        diarization = self.pipeline({
+        diarization_result = self.pipeline({
             "waveform": waveform,
             "sample_rate": sample_rate
         })
+
+        diarization = getattr(diarization_result, "annotation", diarization_result)
+
+        if not hasattr(diarization, "itertracks"):
+            raise AttributeError("Diarization result does not provide itertracks method")
 
         if progress_callback:
             progress_callback(70, "Processing speaker segments...")

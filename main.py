@@ -70,6 +70,83 @@ def init_storage():
 
 
 @cli.command()
+@click.option(
+    "--include-completed",
+    is_flag=True,
+    help="Also remove tasks marked as completed or failed",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show the tasks that would be removed without deleting them",
+)
+def clear_tasks(include_completed: bool, dry_run: bool):
+    """Clear residual task records from Redis"""
+    from src.services.task_manager import TaskManager
+
+    task_manager = TaskManager()
+    redis_client = task_manager.redis_client
+
+    # Determine which task statuses should be removed
+    statuses_to_clear = {"pending", "processing"}
+    cleared = []
+    skipped = []
+
+    for key in redis_client.scan_iter(match="task:*"):
+        key_str = key.decode("utf-8")
+        task_id = key_str.split("task:", 1)[-1]
+        task_data = redis_client.hgetall(key)
+
+        status = task_data.get(b"status", b"").decode("utf-8") if task_data else ""
+        normalized_status = status.lower()
+
+        should_clear = include_completed or normalized_status in statuses_to_clear
+
+        if should_clear:
+            cleared.append((task_id, status or "unknown"))
+        else:
+            skipped.append((task_id, status or "unknown"))
+
+    if not cleared:
+        log.info("No matching tasks found to clear in Redis")
+        if skipped:
+            log.info(
+                "Existing tasks left untouched: "
+                + ", ".join(f"{tid} ({status})" for tid, status in skipped)
+            )
+        return
+
+    task_list_str = ", ".join(f"{tid} ({status})" for tid, status in cleared)
+
+    if dry_run:
+        log.info(f"Dry run: the following tasks would be removed: {task_list_str}")
+        if skipped:
+            log.info(
+                "Tasks preserved due to status filters: "
+                + ", ".join(f"{tid} ({status})" for tid, status in skipped)
+            )
+        return
+
+    # Confirm deletion interactively to avoid accidental clearing
+    if not click.confirm(
+        f"Delete {len(cleared)} task(s) from Redis: {task_list_str}?", default=False
+    ):
+        log.info("Task clearing aborted by user")
+        return
+
+    for task_id, _ in cleared:
+        task_manager.delete_task(task_id)
+
+    log.info(f"Removed {len(cleared)} task(s) from Redis: {task_list_str}")
+
+    if skipped:
+        log.info(
+            "Tasks preserved due to status filters: "
+            + ", ".join(f"{tid} ({status})" for tid, status in skipped)
+        )
+
+
+@cli.command()
 def check_external_service():
     """Check connectivity to external services"""
     log.info("Checking external services connectivity...")

@@ -35,18 +35,19 @@ class DiarizationTask(Task):
 def process_audio_task(self, task_id: str, audio_file_path: str, callback_url: str = None):
     """Process audio file for speaker diarization"""
 
-    # Check if we can start new task
-    if not task_manager.can_start_new_task():
-        task_manager.set_task_error(
-            task_id,
-            "Too many concurrent tasks. Please try again later.",
-            "QUEUE_FULL"
-        )
-        return
-
     try:
-        # Create task record
-        task_manager.create_task(task_id)
+        # Ensure task record exists
+        if not task_manager.task_exists(task_id):
+            task_manager.create_task(task_id)
+
+        # Check if we can start new task
+        if not task_manager.can_start_new_task():
+            task_manager.set_task_error(
+                task_id,
+                "Too many concurrent tasks. Please try again later.",
+                "QUEUE_FULL"
+            )
+            return
 
         # Check concurrent task limit
         if not task_manager.can_start_new_task():
@@ -61,12 +62,7 @@ def process_audio_task(self, task_id: str, audio_file_path: str, callback_url: s
                 time.sleep(5)
 
         # Start processing
-        task_manager.update_task_status(
-            task_id,
-            "processing",
-            progress=10,
-            message="Starting audio processing..."
-        )
+        task_manager.update_task_status(task_id, "processing", progress=10, message="Starting audio processing...")
 
         # Process audio
         audio_path = Path(audio_file_path)
