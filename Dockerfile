@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster dependency management
-RUN pip install uv
+RUN pip install --no-cache-dir uv
 
 # Set working directory
 WORKDIR /app
@@ -31,7 +31,7 @@ RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install dependencies using uv sync with lock file (no local package)
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 # Copy application code after dependencies are installed
 COPY src/ ./src/
