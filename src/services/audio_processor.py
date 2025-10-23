@@ -19,14 +19,27 @@ class AudioProcessor:
         self._load_pipeline()
 
     def _load_pipeline(self):
-        """Load Pyannote pipeline"""
+        """Load Pyannote pipeline - try offline first, then online"""
         try:
-            # You'll need to accept the user agreement on Hugging Face
-            # See: https://huggingface.co/pyannote/speaker-diarization-3.1
-            self.pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                use_auth_token=None  # Add your token if needed
-            )
+            # Try to load from local model directory first (offline mode)
+            local_model_path = settings.model_path_obj / settings.model_name.replace("/", "--")
+
+            if local_model_path.exists():
+                log.info(f"Loading Pyannote pipeline from local path: {local_model_path}")
+                self.pipeline = Pipeline.from_pretrained(str(local_model_path))
+            else:
+                log.info(f"Local model not found at {local_model_path}, trying to load from Hugging Face...")
+                log.warning("Note: This requires internet connection and Hugging Face access token")
+                log.warning("For offline usage, run: python main.py download-model --auth-token YOUR_TOKEN")
+
+                # Try to load from Hugging Face (will fail without auth token)
+                try:
+                    self.pipeline = Pipeline.from_pretrained(settings.model_name)
+                except Exception as e:
+                    log.error(f"Failed to load model from Hugging Face: {e}")
+                    log.error("Please download the model first with: python main.py download-model --auth-token YOUR_TOKEN")
+                    log.error("Or ensure you have accepted the user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1")
+                    raise
 
             # Move pipeline to GPU if available
             if torch.cuda.is_available():
@@ -37,6 +50,7 @@ class AudioProcessor:
 
         except Exception as e:
             log.error(f"Failed to load Pyannote pipeline: {e}")
+            log.error("For offline usage, download the model first with: python main.py download-model --auth-token YOUR_TOKEN")
             raise
 
     def process_audio(

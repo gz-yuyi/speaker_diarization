@@ -117,6 +117,36 @@ uv run python main.py check-external-service
 
 This command will test connections to all Redis instances and report their status, masking passwords in the output for security.
 
+### Model Configuration (Offline Usage)
+
+The application uses Pyannote's speaker diarization model which requires a Hugging Face access token. For complete offline operation, download the model first:
+
+```bash
+# Download model for offline usage
+uv run python main.py download-model --auth-token YOUR_HUGGING_FACE_TOKEN
+
+# Custom model name and output directory
+uv run python main.py download-model --auth-token YOUR_TOKEN --model-name pyannote/speaker-diarization-3.1 --output-dir ./models
+```
+
+**Model Configuration Environment Variables:**
+```bash
+MODEL_NAME=pyannote/speaker-diarization-3.1  # Model identifier
+MODEL_PATH=./models                          # Local model storage directory
+```
+
+**Setup Steps:**
+1. Get a Hugging Face access token from https://huggingface.co/settings/tokens
+2. Accept the user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1
+3. Download the model: `uv run python main.py download-model --auth-token YOUR_TOKEN`
+4. The model will be saved to `./models/pyannote--speaker-diarization-3.1/`
+5. Run the application completely offline
+
+**Note:** The first time you run the download command, ensure you have:
+- Valid Hugging Face access token
+- Accepted the model's user agreement
+- Stable internet connection (download size: ~1GB)
+
 ## Documentation
 
 - [API Documentation](docs/api.md) - Complete API reference

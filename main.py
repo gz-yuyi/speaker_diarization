@@ -259,5 +259,71 @@ def check_service(api_url):
     log.info("🎯 Service functionality check completed!")
 
 
+@cli.command()
+@click.option("--auth-token", required=True, help="Hugging Face access token for downloading the model")
+@click.option("--model-name", default=settings.model_name, help="Model name to download")
+@click.option("--output-dir", default=settings.model_path, help="Directory to save the model")
+def download_model(auth_token: str, model_name: str, output_dir: str):
+    """Download Hugging Face model for offline usage"""
+    try:
+        from huggingface_hub import snapshot_download
+        from pathlib import Path
+
+        log.info(f"Starting model download for offline usage...")
+        log.info(f"Model: {model_name}")
+        log.info(f"Output directory: {output_dir}")
+
+        # Create output directory
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Convert model name to valid directory name
+        model_dir_name = model_name.replace("/", "--")
+        model_dir_path = output_path / model_dir_name
+
+        # Check if model already exists
+        if model_dir_path.exists():
+            log.info(f"Model directory already exists at: {model_dir_path}")
+            if click.confirm("Do you want to re-download the model?"):
+                import shutil
+                shutil.rmtree(model_dir_path)
+            else:
+                log.info("Using existing model directory")
+                return
+
+        log.info(f"Downloading model {model_name}...")
+        log.info("This may take several minutes depending on your internet connection and model size.")
+
+        # Download model using huggingface_hub
+        downloaded_path = snapshot_download(
+            repo_id=model_name,
+            token=auth_token,
+            local_dir=model_dir_path,
+            local_dir_use_symlinks=False
+        )
+
+        log.info(f"✅ Model successfully downloaded to: {downloaded_path}")
+        log.info(f"🎉 Model is now available for offline usage!")
+        log.info(f"You can now run the service completely offline.")
+
+        # Create a marker file to indicate successful download
+        marker_file = model_dir_path / ".downloaded_successfully"
+        marker_file.write_text(f"Model: {model_name}\nDownloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        log.info("📝 Created download completion marker")
+
+    except ImportError:
+        log.error("❌ huggingface_hub package not found")
+        log.error("Please install it with: pip install huggingface_hub")
+        return
+    except Exception as e:
+        log.error(f"❌ Model download failed: {e}")
+        log.error("Please check:")
+        log.error("1. Your auth token is valid and has access to the model")
+        log.error("2. You have accepted the user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1")
+        log.error("3. You have a stable internet connection")
+        return
+
+
 if __name__ == "__main__":
     cli()

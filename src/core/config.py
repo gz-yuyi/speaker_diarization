@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     task_timeout_minutes: int = Field(default=60)
     result_retention_days: int = Field(default=7)
 
+    # Model Configuration
+    model_name: str = Field(default="pyannote/speaker-diarization-community-1")
+    model_path: str = Field(default="./models")  # Local model directory for offline loading
+
     # Logging
     log_level: str = Field(default="INFO")
     log_file: str = Field(default="./logs/app.log")
@@ -87,6 +91,13 @@ class Settings(BaseSettings):
         (base_path / "processed").mkdir(exist_ok=True)
         (base_path / "temp").mkdir(exist_ok=True)
         self.log_file_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create model directory
+        Path(self.model_path).mkdir(parents=True, exist_ok=True)
+
+    @property
+    def model_path_obj(self) -> Path:
+        return Path(self.model_path)
 
 
 settings = Settings()
