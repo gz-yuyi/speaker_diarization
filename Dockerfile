@@ -1,67 +1,73 @@
-# Use Python 3.12 slim image as base
-FROM python:3.12-slim AS base
+# syntax=docker/dockerfile:1.7
 
-# Set environment variables
+FROM python:3.12-slim AS builder
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for faster dependency management
 RUN pip install --no-cache-dir uv
 
-# Set working directory
 WORKDIR /app
 
-# Copy only dependency files first
 COPY pyproject.toml uv.lock ./
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Create virtual environment
 RUN uv venv /opt/venv
+
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install dependencies using uv sync with lock file (no local package)
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
-# Copy application code after dependencies are installed
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY src/ ./src/
 COPY main.py ./
 COPY .env.example ./.env.example
 COPY README.md ./
 
-# Create necessary directories and set permissions
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
 RUN mkdir -p storage uploads processed temp models logs assets && \
     chown -R appuser:appuser /app
 
-# Download model during build (requires build-arg)
 ARG HUGGINGFACE_TOKEN
-RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
+ARG DOWNLOAD_MODEL=false
+RUN if [ "$DOWNLOAD_MODEL" = "true" ] && [ -n "$HUGGINGFACE_TOKEN" ]; then \
         echo "Downloading model during build..." && \
-        cd /app && \
-        uv run python main.py download-model --auth-token $HUGGINGFACE_TOKEN || echo "Model download failed, will download at runtime"; \
+        uv run python main.py download-model --auth-token "$HUGGINGFACE_TOKEN"; \
     else \
-        echo "No HUGGINGFACE_TOKEN provided, model will be downloaded at runtime"; \
-    fi
+        echo "Skipping model download during build"; \
+    fi && \
+    rm -rf /root/.cache/huggingface
 
-# Switch to non-root user
 USER appuser
 
-# Expose port
 EXPOSE 8000
 
-# Default entrypoint
 ENTRYPOINT ["uv", "run", "python", "main.py"]
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1

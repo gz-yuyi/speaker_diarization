@@ -149,15 +149,14 @@ MODEL_PATH=./models                          # Local model storage directory
 
 ## Docker Usage
 
-The Docker setup includes model download during build time for fully offline operation.
+The Docker image now skips model download by default to keep builds small and CI-friendly. You can opt in to bundling the model when needed.
 
 ### Quick Start with Docker
 
-**Step 1: Build image with model**
+**Step 1: Build base image (no model)**
 ```bash
-# Build Docker image with Hugging Face model
-docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
-  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+# Build Docker image without embedding the model
+docker build -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
 ```
 
 **Step 2: Push to registry (optional)**
@@ -173,7 +172,7 @@ docker-compose up -d
 
 ### Docker Configuration Files
 
-- **`Dockerfile`** - Single-stage build with model download
+- **`Dockerfile`** - Multi-stage build with optional model download
 - **`docker-compose.yml`** - Uses registry image
 - **`.dockerignore`** - Excludes unnecessary files from Docker build
 
@@ -213,8 +212,13 @@ MODEL_PATH=/app/models
 
 **Build Commands:**
 ```bash
-# Build with model download and registry tag
-docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+# Default build without model download
+docker build -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+
+# Optional: embed Hugging Face model in the image
+docker build \
+  --build-arg DOWNLOAD_MODEL=true \
+  --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
   -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
 ```
 
@@ -241,15 +245,21 @@ docker-compose exec api uv run python main.py check-service
 
 ### Model Management
 
-The model is downloaded during Docker build time and included in the image:
+The model is **not** bundled by default. Trigger the download only when you need an offline image:
 
-**Benefits:**
+```bash
+docker build \
+  --build-arg DOWNLOAD_MODEL=true \
+  --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+```
+
+**Benefits when embedding the model:**
 - ✅ Fully offline operation - no internet needed at runtime
 - ✅ Faster container startup - model is pre-loaded
 - ✅ Consistent deployments - same model version across all environments
-- ✅ No external model dependencies at runtime
 
-**Build-time Requirements:**
+**Build-time Requirements (only when `DOWNLOAD_MODEL=true`):**
 - Hugging Face access token
 - Internet connection during build
 - Accepted user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1
@@ -260,11 +270,18 @@ For production deployment:
 
 1. **Get Hugging Face token** from https://huggingface.co/settings/tokens
 2. **Accept user agreement** at: https://huggingface.co/pyannote/speaker-diarization-3.1
-3. **Build image with model**:
-```bash
-docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
-  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
-```
+3. **Build image (choose one of the following)**:
+   - **Without model (recommended for CI/limited disk):**
+     ```bash
+     docker build -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+     ```
+   - **With embedded model (requires token):**
+     ```bash
+     docker build \
+       --build-arg DOWNLOAD_MODEL=true \
+       --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+       -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+     ```
 4. **Push to registry** (optional): `docker push crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest`
 5. **Deploy**: `docker-compose up -d`
 6. **Verify**: `curl http://localhost:8000/health`
@@ -275,8 +292,7 @@ docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
 
 This project includes automated CI/CD workflows that:
 
-- **Build Docker images** on push to main/develop branches
-- **Download Hugging Face models** during build using secure tokens
+- **Build Docker images** on push to main/develop branches (skips model download by default to conserve runner disk)
 - **Push to Alibaba Cloud Registry** automatically
 - **Generate SBOMs** for supply chain transparency
 - **Support multi-platform** builds (amd64/arm64)
@@ -287,12 +303,12 @@ Set up these secrets in GitHub Settings > Secrets and variables > Actions:
 
 - `ALIYUN_REGISTRY_USERNAME` - Alibaba Cloud Container Registry username
 - `ALIYUN_REGISTRY_PASSWORD` - Alibaba Cloud Container Registry password
-- `HF_TOKEN` - Hugging Face access token for model download
+- `HF_TOKEN` - (Optional) Hugging Face access token when embedding the model during CI builds
 
 ### Automated Deployment
 
 When code is pushed to `main` branch:
-1. GitHub Actions builds the Docker image with the Hugging Face model
+1. GitHub Actions builds the Docker image (without model by default)
 2. Image is pushed to: `crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest`
 3. Image is ready for deployment
 
