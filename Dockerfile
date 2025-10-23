@@ -47,6 +47,8 @@ COPY src/ ./src/
 COPY main.py ./
 COPY .env.example ./.env.example
 COPY README.md ./
+COPY pyproject.toml ./
+COPY uv.lock ./
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
