@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # Redis service
+  redis:
+    image: m.daocloud.io/docker.io/redis:7-alpine
+    container_name: speaker_diarization_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - speaker_diarization_network
+
+  # API service
+  api:
+    image: crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest
+    container_name: speaker_diarization_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./assets:/app/assets
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_DEBUG=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=
+      - REDIS_PASSWORD=
+      - REDIS_DB_MAIN=0
+      - REDIS_DB_BROKER=1
+      - REDIS_DB_BACKEND=2
+      - STORAGE_BASE_PATH=/app/storage
+      - MAX_FILE_SIZE_MB=500
+      - MAX_CONCURRENT_TASKS=10
+      - TASK_TIMEOUT_MINUTES=60
+      - RESULT_RETENTION_DAYS=7
+      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_PATH=/app/models
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/app/logs/app.log
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["start", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - speaker_diarization_network
+
+  # Celery worker
+  worker:
+    image: crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest
+    container_name: speaker_diarization_worker
+    restart: unless-stopped
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+      - ./assets:/app/assets
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=
+      - REDIS_PASSWORD=
+      - REDIS_DB_MAIN=0
+      - REDIS_DB_BROKER=1
+      - REDIS_DB_BACKEND=2
+      - STORAGE_BASE_PATH=/app/storage
+      - MAX_CONCURRENT_TASKS=10
+      - TASK_TIMEOUT_MINUTES=60
+      - RESULT_RETENTION_DAYS=7
+      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_PATH=/app/models
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/app/logs/app.log
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["worker", "--concurrency", "2"]
+    networks:
+      - speaker_diarization_network
+
+  # Celery beat (optional - for scheduled tasks)
+  beat:
+    image: crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest
+    container_name: speaker_diarization_beat
+    restart: unless-stopped
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=
+      - REDIS_PASSWORD=
+      - REDIS_DB_MAIN=0
+      - REDIS_DB_BROKER=1
+      - REDIS_DB_BACKEND=2
+      - STORAGE_BASE_PATH=/app/storage
+      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_PATH=/app/models
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/app/logs/app.log
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["beat"]
+    networks:
+      - speaker_diarization_network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  speaker_diarization_network:
+    driver: bridge

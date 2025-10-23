@@ -147,11 +147,161 @@ MODEL_PATH=./models                          # Local model storage directory
 - Accepted the model's user agreement
 - Stable internet connection (download size: ~1GB)
 
+## Docker Usage
+
+The Docker setup includes model download during build time for fully offline operation.
+
+### Quick Start with Docker
+
+**Step 1: Build image with model**
+```bash
+# Build Docker image with Hugging Face model
+docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+```
+
+**Step 2: Push to registry (optional)**
+```bash
+docker push crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest
+```
+
+**Step 3: Run the application**
+```bash
+# Start with registry image
+docker-compose up -d
+```
+
+### Docker Configuration Files
+
+- **`Dockerfile`** - Single-stage build with model download
+- **`docker-compose.yml`** - Uses registry image
+- **`.dockerignore`** - Excludes unnecessary files from Docker build
+
+### Services
+
+The Docker Compose setup includes:
+
+1. **Redis** - Message broker and caching
+2. **API Server** - FastAPI application
+3. **Celery Worker** - Background task processing
+4. **Celery Beat** - Scheduled tasks (production only)
+
+### Environment Variables for Docker
+
+Copy `.env.example` to `.env` and customize for your environment:
+
+```bash
+cp .env.example .env
+```
+
+Key Docker-specific settings:
+```bash
+# Redis connection (Docker service name)
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# API configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+
+# Storage paths (inside container)
+STORAGE_BASE_PATH=/app/storage
+MODEL_PATH=/app/models
+```
+
+### Docker Commands
+
+**Build Commands:**
+```bash
+# Build with model download and registry tag
+docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+```
+
+**Runtime Commands:**
+```bash
+# Start with registry image
+docker-compose up -d
+
+# View logs
+docker-compose logs -f api
+docker-compose logs -f worker
+
+# Stop all services
+docker-compose down
+
+# Scale workers
+docker-compose up -d --scale worker=3
+
+# Execute commands in container
+docker-compose exec api uv run python main.py status
+docker-compose exec api uv run python main.py check-external-service
+docker-compose exec api uv run python main.py check-service
+```
+
+### Model Management
+
+The model is downloaded during Docker build time and included in the image:
+
+**Benefits:**
+- ✅ Fully offline operation - no internet needed at runtime
+- ✅ Faster container startup - model is pre-loaded
+- ✅ Consistent deployments - same model version across all environments
+- ✅ No external model dependencies at runtime
+
+**Build-time Requirements:**
+- Hugging Face access token
+- Internet connection during build
+- Accepted user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1
+
+### Production Deployment
+
+For production deployment:
+
+1. **Get Hugging Face token** from https://huggingface.co/settings/tokens
+2. **Accept user agreement** at: https://huggingface.co/pyannote/speaker-diarization-3.1
+3. **Build image with model**:
+```bash
+docker build --build-arg HUGGINGFACE_TOKEN=YOUR_TOKEN \
+  -t crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest .
+```
+4. **Push to registry** (optional): `docker push crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest`
+5. **Deploy**: `docker-compose up -d`
+6. **Verify**: `curl http://localhost:8000/health`
+
+## CI/CD
+
+### GitHub Actions
+
+This project includes automated CI/CD workflows that:
+
+- **Build Docker images** on push to main/develop branches
+- **Download Hugging Face models** during build using secure tokens
+- **Push to Alibaba Cloud Registry** automatically
+- **Generate SBOMs** for supply chain transparency
+- **Support multi-platform** builds (amd64/arm64)
+
+### Required Repository Secrets
+
+Set up these secrets in GitHub Settings > Secrets and variables > Actions:
+
+- `ALIYUN_REGISTRY_USERNAME` - Alibaba Cloud Container Registry username
+- `ALIYUN_REGISTRY_PASSWORD` - Alibaba Cloud Container Registry password
+- `HF_TOKEN` - Hugging Face access token for model download
+
+### Automated Deployment
+
+When code is pushed to `main` branch:
+1. GitHub Actions builds the Docker image with the Hugging Face model
+2. Image is pushed to: `crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com/yuyi_tech/speaker_diarization:latest`
+3. Image is ready for deployment
+
 ## Documentation
 
 - [API Documentation](docs/api.md) - Complete API reference
 - [Architecture Overview](docs/architecture.md) - System design and structure
 - [Implementation Plan](docs/implementation_plan.md) - Development roadmap
+- [CI/CD Workflows](.github/workflows/README.md) - GitHub Actions configuration
 
 ## API Docs
 
