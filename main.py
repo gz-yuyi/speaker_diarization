@@ -1,4 +1,7 @@
 import redis
+import random
+import time
+import requests
 import click
 import uvicorn
 
@@ -135,6 +138,125 @@ def check_external_service():
             print()
 
         print("="*60)
+
+
+@cli.command()
+@click.option("--api-url", default=f"http://{settings.api_host}:{settings.api_port}", help="API base URL")
+def check_service(api_url):
+    """Check service functionality by testing audio file upload and processing"""
+    import os
+    from pathlib import Path
+
+    log.info("Starting service functionality check...")
+
+    # Get audio files from assets directory
+    assets_dir = Path("assets")
+    if not assets_dir.exists():
+        log.error("❌ Assets directory not found")
+        return
+
+    # Find audio files
+    audio_extensions = {'.wav', '.mp3', '.flac', '.m4a', '.ogg'}
+    audio_files = []
+
+    for file_path in assets_dir.iterdir():
+        if file_path.suffix.lower() in audio_extensions:
+            audio_files.append(file_path)
+
+    if not audio_files:
+        log.error("❌ No audio files found in assets directory")
+        return
+
+    # Randomly select one audio file
+    selected_file = random.choice(audio_files)
+    log.info(f"📁 Selected audio file: {selected_file.name}")
+
+    try:
+        # Check if API is running
+        api_health_url = f"{api_url}/health"
+        log.info(f"🔍 Checking API health at: {api_health_url}")
+
+        try:
+            health_response = requests.get(api_health_url, timeout=10)
+            if health_response.status_code == 200:
+                log.info("✅ API health check passed")
+            else:
+                log.error(f"❌ API health check failed: {health_response.status_code}")
+                return
+        except requests.exceptions.RequestException as e:
+            log.error(f"❌ Unable to connect to API: {e}")
+            log.error("   Make sure the API server is running with: python main.py start")
+            return
+
+        # Upload audio file
+        upload_url = f"{api_url}/api/v1/diarize/upload"
+        log.info(f"📤 Uploading audio file to: {upload_url}")
+
+        with open(selected_file, 'rb') as f:
+            files = {'audio_file': (selected_file.name, f, 'audio/wav')}
+            upload_response = requests.post(upload_url, files=files, timeout=30)
+
+        if upload_response.status_code == 200:
+            task_data = upload_response.json()
+            task_id = task_data.get('task_id')
+            log.info(f"✅ File uploaded successfully, task_id: {task_id}")
+        else:
+            log.error(f"❌ File upload failed: {upload_response.status_code}")
+            log.error(f"   Response: {upload_response.text}")
+            return
+
+        # Check task status
+        status_url = f"{api_url}/api/v1/diarize/status/{task_id}"
+        log.info(f"⏳ Monitoring task status...")
+
+        max_wait_time = 300  # 5 minutes max wait
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait_time:
+            try:
+                status_response = requests.get(status_url, timeout=10)
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    task_status = status_data.get('status')
+
+                    log.info(f"📊 Task status: {task_status}")
+
+                    if task_status == 'completed':
+                        log.info("🎉 Task completed successfully!")
+
+                        # Try to download results
+                        download_url = f"{api_url}/api/v1/diarize/download/{task_id}"
+                        log.info(f"📥 Downloading results from: {download_url}")
+
+                        download_response = requests.get(download_url, timeout=30)
+                        if download_response.status_code == 200:
+                            log.info("✅ Results downloaded successfully")
+                            log.info(f"📄 Content type: {download_response.headers.get('content-type')}")
+                        else:
+                            log.warning(f"⚠️ Results download failed: {download_response.status_code}")
+
+                        break
+                    elif task_status == 'failed':
+                        log.error(f"❌ Task failed: {status_data.get('error', 'Unknown error')}")
+                        break
+                    else:
+                        # Still processing, wait and check again
+                        time.sleep(5)
+                else:
+                    log.error(f"❌ Status check failed: {status_response.status_code}")
+                    break
+            except requests.exceptions.RequestException as e:
+                log.error(f"❌ Status check error: {e}")
+                break
+
+        if time.time() - start_time >= max_wait_time:
+            log.warning("⏰ Task timeout reached (5 minutes)")
+
+    except Exception as e:
+        log.error(f"❌ Service check failed: {e}")
+        return
+
+    log.info("🎯 Service functionality check completed!")
 
 
 if __name__ == "__main__":
