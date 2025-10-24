@@ -5,7 +5,8 @@ FROM python:3.12-slim AS builder
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_NO_CACHE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -29,7 +30,8 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_NO_CACHE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -50,10 +52,10 @@ COPY README.md ./
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN groupadd -r appuser && useradd -m -r -g appuser appuser
 
 RUN mkdir -p storage uploads processed temp models logs assets && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app /home/appuser
 
 ARG HUGGINGFACE_TOKEN
 ARG DOWNLOAD_MODEL=false
