@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple, Any, Callable
 import torch
 import torchaudio
 from pyannote.audio import Pipeline
+from pyannote.core import Annotation, Segment
 
 from src.services.file_manager import FileManager
 from src.core.config import settings
@@ -20,38 +21,26 @@ class AudioProcessor:
 
     def _load_pipeline(self):
         """Load Pyannote pipeline - try offline first, then online"""
-        try:
-            # Try to load from local model directory first (offline mode)
-            local_model_path = settings.model_path_obj / settings.model_name.replace("/", "--")
+        # Load from local model directory first (offline mode)
+        local_model_path = settings.model_path_obj / settings.model_name.replace("/", "--")
 
-            if local_model_path.exists():
-                log.info(f"Loading Pyannote pipeline from local path: {local_model_path}")
-                self.pipeline = Pipeline.from_pretrained(str(local_model_path))
-            else:
-                log.info(f"Local model not found at {local_model_path}, trying to load from Hugging Face...")
-                log.warning("Note: This requires internet connection and Hugging Face access token")
-                log.warning("For offline usage, run: python main.py download-model --auth-token YOUR_TOKEN")
+        if local_model_path.exists():
+            log.info(f"Loading Pyannote pipeline from local path: {local_model_path}")
+            self.pipeline = Pipeline.from_pretrained(str(local_model_path))
+        else:
+            log.info(f"Local model not found at {local_model_path}, trying to load from Hugging Face...")
+            log.warning("Note: This requires internet connection and Hugging Face access token")
+            log.warning("For offline usage, run: python main.py download-model --auth-token YOUR_TOKEN")
 
-                # Try to load from Hugging Face (will fail without auth token)
-                try:
-                    self.pipeline = Pipeline.from_pretrained(settings.model_name)
-                except Exception as e:
-                    log.error(f"Failed to load model from Hugging Face: {e}")
-                    log.error("Please download the model first with: python main.py download-model --auth-token YOUR_TOKEN")
-                    log.error("Or ensure you have accepted the user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1")
-                    raise
+            # Load from Hugging Face (will fail without auth token)
+            self.pipeline = Pipeline.from_pretrained(settings.model_name)
 
-            # Move pipeline to GPU if available
-            if torch.cuda.is_available():
-                self.pipeline.to(torch.device("cuda"))
-                log.info("Pyannote pipeline loaded on GPU")
-            else:
-                log.info("Pyannote pipeline loaded on CPU")
-
-        except Exception as e:
-            log.error(f"Failed to load Pyannote pipeline: {e}")
-            log.error("For offline usage, download the model first with: python main.py download-model --auth-token YOUR_TOKEN")
-            raise
+        # Move pipeline to GPU if available
+        if torch.cuda.is_available():
+            self.pipeline.to(torch.device("cuda"))
+            log.info("Pyannote pipeline loaded on GPU")
+        else:
+            log.info("Pyannote pipeline loaded on CPU")
 
     def process_audio(
         self,
@@ -87,10 +76,8 @@ class AudioProcessor:
             "sample_rate": sample_rate
         })
 
-        diarization = getattr(diarization_result, "annotation", diarization_result)
-
-        if not hasattr(diarization, "itertracks"):
-            raise AttributeError("Diarization result does not provide itertracks method")
+        # Get diarization results from newer Pyannote versions
+        diarization = diarization_result.speaker_diarization
 
         if progress_callback:
             progress_callback(70, "Processing speaker segments...")

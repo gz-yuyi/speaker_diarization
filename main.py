@@ -1,12 +1,17 @@
-import redis
-import random
+import json
+import os
+import shutil
 import time
-import requests
+from pathlib import Path
+
 import click
 import uvicorn
+from huggingface_hub import snapshot_download
 
 from src.core.config import settings
 from src.core.logger import log
+from src.services.audio_processor import AudioProcessor
+import src.app
 
 
 @click.group()
@@ -24,8 +29,6 @@ def cli():
 def start(host: str, port: int, debug: bool, reload: bool):
     """Start the FastAPI server"""
     log.info(f"Starting server on {host}:{port}")
-
-    import src.app
 
     uvicorn.run(
         "src.app:app",
@@ -221,8 +224,6 @@ def check_external_service():
 @click.option("--api-url", default=f"http://{settings.api_host}:{settings.api_port}", help="API base URL")
 def check_service(api_url):
     """Check service functionality by testing audio file upload and processing"""
-    import os
-    from pathlib import Path
 
     log.info("Starting service functionality check...")
 
@@ -342,64 +343,120 @@ def check_service(api_url):
 @click.option("--output-dir", default=settings.model_path, help="Directory to save the model")
 def download_model(auth_token: str, model_name: str, output_dir: str):
     """Download Hugging Face model for offline usage"""
-    try:
-        from huggingface_hub import snapshot_download
-        from pathlib import Path
 
-        log.info(f"Starting model download for offline usage...")
-        log.info(f"Model: {model_name}")
-        log.info(f"Output directory: {output_dir}")
+    log.info(f"Starting model download for offline usage...")
+    log.info(f"Model: {model_name}")
+    log.info(f"Output directory: {output_dir}")
 
-        # Create output directory
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
 
-        # Convert model name to valid directory name
-        model_dir_name = model_name.replace("/", "--")
-        model_dir_path = output_path / model_dir_name
+    # Convert model name to valid directory name
+    model_dir_name = model_name.replace("/", "--")
+    model_dir_path = output_path / model_dir_name
 
-        # Check if model already exists
-        if model_dir_path.exists():
-            log.info(f"Model directory already exists at: {model_dir_path}")
-            if click.confirm("Do you want to re-download the model?"):
-                import shutil
-                shutil.rmtree(model_dir_path)
-            else:
-                log.info("Using existing model directory")
-                return
+    # Check if model already exists
+    if model_dir_path.exists():
+        log.info(f"Model directory already exists at: {model_dir_path}")
+        if click.confirm("Do you want to re-download the model?"):
+            import shutil
+            shutil.rmtree(model_dir_path)
+        else:
+            log.info("Using existing model directory")
+            return
 
-        log.info(f"Downloading model {model_name}...")
-        log.info("This may take several minutes depending on your internet connection and model size.")
+    log.info(f"Downloading model {model_name}...")
+    log.info("This may take several minutes depending on your internet connection and model size.")
 
-        # Download model using huggingface_hub
-        downloaded_path = snapshot_download(
-            repo_id=model_name,
-            token=auth_token,
-            local_dir=model_dir_path,
-            local_dir_use_symlinks=False
-        )
+    # Download model using huggingface_hub
+    downloaded_path = snapshot_download(
+        repo_id=model_name,
+        token=auth_token,
+        local_dir=model_dir_path,
+        local_dir_use_symlinks=False
+    )
 
-        log.info(f"✅ Model successfully downloaded to: {downloaded_path}")
-        log.info(f"🎉 Model is now available for offline usage!")
-        log.info(f"You can now run the service completely offline.")
+    log.info(f"✅ Model successfully downloaded to: {downloaded_path}")
+    log.info(f"🎉 Model is now available for offline usage!")
+    log.info(f"You can now run the service completely offline.")
 
-        # Create a marker file to indicate successful download
-        marker_file = model_dir_path / ".downloaded_successfully"
-        marker_file.write_text(f"Model: {model_name}\nDownloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    # Create a marker file to indicate successful download
+    marker_file = model_dir_path / ".downloaded_successfully"
+    marker_file.write_text(f"Model: {model_name}\nDownloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        log.info("📝 Created download completion marker")
+    log.info("📝 Created download completion marker")
 
-    except ImportError:
-        log.error("❌ huggingface_hub package not found")
-        log.error("Please install it with: pip install huggingface_hub")
+
+@cli.command()
+@click.option("--input", required=True, help="Input audio file path")
+@click.option("--output-dir", required=True, help="Output directory for split audio segments")
+def split_audio(input: str, output_dir: str):
+    """Split audio file using speaker diarization"""
+
+    log.info(f"Starting audio processing...")
+    log.info(f"Input file: {input}")
+    log.info(f"Output directory: {output_dir}")
+
+    # Validate input file
+    input_path = Path(input)
+    if not input_path.exists():
+        log.error(f"❌ Input file does not exist: {input}")
         return
-    except Exception as e:
-        log.error(f"❌ Model download failed: {e}")
-        log.error("Please check:")
-        log.error("1. Your auth token is valid and has access to the model")
-        log.error("2. You have accepted the user agreement at: https://huggingface.co/pyannote/speaker-diarization-3.1")
-        log.error("3. You have a stable internet connection")
+
+    if not input_path.is_file():
+        log.error(f"❌ Input path is not a file: {input}")
         return
+
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Initialize AudioProcessor
+    log.info("🔧 Initializing AudioProcessor...")
+    processor = AudioProcessor()
+
+    # Process audio with progress callback
+    def progress_callback(percent: int, message: str):
+        log.info(f"📊 [{percent:3d}%] {message}")
+
+    log.info("🎵 Starting audio analysis...")
+    task_id = f"local_{int(time.time())}"
+
+    speaker_segments, metadata = processor.process_audio(
+        input_path,
+        task_id,
+        progress_callback
+    )
+
+    log.info(f"✅ Audio processing completed!")
+    log.info(f"📊 Found {metadata['diarization_results']['total_speakers']} speakers")
+    log.info(f"📊 Generated {metadata['diarization_results']['total_segments']} audio segments")
+
+    # Copy segments to specified output directory
+    log.info("📁 Copying audio segments to output directory...")
+
+    copied_segments = 0
+    for speaker_id, segment_files in speaker_segments.items():
+        speaker_output_dir = output_path / speaker_id
+        speaker_output_dir.mkdir(exist_ok=True)
+
+        for segment_file in segment_files:
+            dest_file = speaker_output_dir / segment_file.name
+            shutil.copy2(segment_file, dest_file)
+            copied_segments += 1
+            log.info(f"📄 Copied: {speaker_id}/{segment_file.name}")
+
+    # Save metadata
+    metadata_file = output_path / "metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+    log.info(f"✅ Split audio completed successfully!")
+    log.info(f"📁 Output directory: {output_path}")
+    log.info(f"📄 Copied {copied_segments} audio segments")
+    log.info(f"📊 Metadata saved to: {metadata_file}")
+
 
 
 if __name__ == "__main__":
