@@ -286,7 +286,7 @@ def check_service(api_url):
         status_url = f"{api_url}/api/v1/diarize/status/{task_id}"
         log.info(f"⏳ Monitoring task status...")
 
-        max_wait_time = 300  # 5 minutes max wait
+        max_wait_time = 3000  # 5 minutes max wait
         start_time = time.time()
 
         while time.time() - start_time < max_wait_time:

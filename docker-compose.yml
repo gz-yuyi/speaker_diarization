@@ -46,7 +46,7 @@ services:
       - MAX_CONCURRENT_TASKS=10
       - TASK_TIMEOUT_MINUTES=60
       - RESULT_RETENTION_DAYS=7
-      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_NAME=pyannote/speaker-diarization-community-1
       - MODEL_PATH=/app/models
       - LOG_LEVEL=INFO
       - LOG_FILE=/app/logs/app.log
@@ -86,7 +86,7 @@ services:
       - MAX_CONCURRENT_TASKS=10
       - TASK_TIMEOUT_MINUTES=60
       - RESULT_RETENTION_DAYS=7
-      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_NAME=pyannote/speaker-diarization-community-1
       - MODEL_PATH=/app/models
       - LOG_LEVEL=INFO
       - LOG_FILE=/app/logs/app.log
@@ -116,7 +116,7 @@ services:
       - REDIS_DB_BROKER=1
       - REDIS_DB_BACKEND=2
       - STORAGE_BASE_PATH=/app/storage
-      - MODEL_NAME=pyannote/speaker-diarization-3.1
+      - MODEL_NAME=pyannote/speaker-diarization-community-1
       - MODEL_PATH=/app/models
       - LOG_LEVEL=INFO
       - LOG_FILE=/app/logs/app.log
