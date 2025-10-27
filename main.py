@@ -1,17 +1,18 @@
 import json
-import os
+import random
 import shutil
 import time
 from pathlib import Path
 
 import click
+import requests
 import uvicorn
 from huggingface_hub import snapshot_download
 
+import src.app
 from src.core.config import settings
 from src.core.logger import log
 from src.services.audio_processor import AudioProcessor
-import src.app
 
 
 @click.group()
@@ -166,7 +167,9 @@ def check_external_service():
                 if ":" in auth_part:
                     # Has username:password
                     username = auth_part.split(":")[0]
-                    return url.replace(f"{username}:{auth_part.split(':')[1]}", f"{username}:***")
+                    return url.replace(
+                        f"{username}:{auth_part.split(':')[1]}", f"{username}:***"
+                    )
                 else:
                     # Only has password
                     return url.replace(f":{auth_part}@", ":***@")
@@ -189,11 +192,22 @@ def check_external_service():
 
     # Check Celery Broker Redis
     success, error = test_redis_connection("Celery Broker", settings.celery_broker_url)
-    services.append(("Celery Broker", mask_redis_url(settings.celery_broker_url), success, error))
+    services.append(
+        ("Celery Broker", mask_redis_url(settings.celery_broker_url), success, error)
+    )
 
     # Check Celery Result Backend Redis
-    success, error = test_redis_connection("Celery Result Backend", settings.celery_result_backend)
-    services.append(("Celery Result Backend", mask_redis_url(settings.celery_result_backend), success, error))
+    success, error = test_redis_connection(
+        "Celery Result Backend", settings.celery_result_backend
+    )
+    services.append(
+        (
+            "Celery Result Backend",
+            mask_redis_url(settings.celery_result_backend),
+            success,
+            error,
+        )
+    )
 
     # Summary
     all_success = all(status for _, _, status, _ in services)
@@ -203,11 +217,13 @@ def check_external_service():
     if all_success:
         log.info(f"🎉 All {total_services} external services are reachable!")
     else:
-        log.warning(f"⚠️  {successful_services}/{total_services} external services are reachable")
+        log.warning(
+            f"⚠️  {successful_services}/{total_services} external services are reachable"
+        )
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("EXTERNAL SERVICES CONNECTIVITY REPORT")
-        print("="*60)
+        print("=" * 60)
 
         for name, url, status, error in services:
             status_symbol = "✅" if status else "❌"
@@ -217,24 +233,28 @@ def check_external_service():
                 print(f"   Error: {error}")
             print()
 
-        print("="*60)
+        print("=" * 60)
 
 
 @cli.command()
-@click.option("--api-url", default=f"http://{settings.api_host}:{settings.api_port}", help="API base URL")
+@click.option(
+    "--api-url",
+    default=f"http://{settings.api_host}:{settings.api_port}",
+    help="API base URL",
+)
 def check_service(api_url):
     """Check service functionality by testing audio file upload and processing"""
 
     log.info("Starting service functionality check...")
 
     # Get audio files from assets directory
-    assets_dir = Path("assets")
+    assets_dir = Path("tests/assets")
     if not assets_dir.exists():
         log.error("❌ Assets directory not found")
         return
 
     # Find audio files
-    audio_extensions = {'.wav', '.mp3', '.flac', '.m4a', '.ogg'}
+    audio_extensions = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
     audio_files = []
 
     for file_path in assets_dir.iterdir():
@@ -263,20 +283,22 @@ def check_service(api_url):
                 return
         except requests.exceptions.RequestException as e:
             log.error(f"❌ Unable to connect to API: {e}")
-            log.error("   Make sure the API server is running with: python main.py start")
+            log.error(
+                "   Make sure the API server is running with: python main.py start"
+            )
             return
 
         # Upload audio file
         upload_url = f"{api_url}/api/v1/diarize/upload"
         log.info(f"📤 Uploading audio file to: {upload_url}")
 
-        with open(selected_file, 'rb') as f:
-            files = {'audio_file': (selected_file.name, f, 'audio/wav')}
+        with open(selected_file, "rb") as f:
+            files = {"audio_file": (selected_file.name, f, "audio/wav")}
             upload_response = requests.post(upload_url, files=files, timeout=30)
 
         if upload_response.status_code == 200:
             task_data = upload_response.json()
-            task_id = task_data.get('task_id')
+            task_id = task_data.get("task_id")
             log.info(f"✅ File uploaded successfully, task_id: {task_id}")
         else:
             log.error(f"❌ File upload failed: {upload_response.status_code}")
@@ -295,11 +317,11 @@ def check_service(api_url):
                 status_response = requests.get(status_url, timeout=10)
                 if status_response.status_code == 200:
                     status_data = status_response.json()
-                    task_status = status_data.get('status')
+                    task_status = status_data.get("status")
 
                     log.info(f"📊 Task status: {task_status}")
 
-                    if task_status == 'completed':
+                    if task_status == "completed":
                         log.info("🎉 Task completed successfully!")
 
                         # Try to download results
@@ -309,13 +331,19 @@ def check_service(api_url):
                         download_response = requests.get(download_url, timeout=30)
                         if download_response.status_code == 200:
                             log.info("✅ Results downloaded successfully")
-                            log.info(f"📄 Content type: {download_response.headers.get('content-type')}")
+                            log.info(
+                                f"📄 Content type: {download_response.headers.get('content-type')}"
+                            )
                         else:
-                            log.warning(f"⚠️ Results download failed: {download_response.status_code}")
+                            log.warning(
+                                f"⚠️ Results download failed: {download_response.status_code}"
+                            )
 
                         break
-                    elif task_status == 'failed':
-                        log.error(f"❌ Task failed: {status_data.get('error', 'Unknown error')}")
+                    elif task_status == "failed":
+                        log.error(
+                            f"❌ Task failed: {status_data.get('error', 'Unknown error')}"
+                        )
                         break
                     else:
                         # Still processing, wait and check again
@@ -338,9 +366,17 @@ def check_service(api_url):
 
 
 @cli.command()
-@click.option("--auth-token", required=True, help="Hugging Face access token for downloading the model")
-@click.option("--model-name", default=settings.model_name, help="Model name to download")
-@click.option("--output-dir", default=settings.model_path, help="Directory to save the model")
+@click.option(
+    "--auth-token",
+    required=True,
+    help="Hugging Face access token for downloading the model",
+)
+@click.option(
+    "--model-name", default=settings.model_name, help="Model name to download"
+)
+@click.option(
+    "--output-dir", default=settings.model_path, help="Directory to save the model"
+)
 def download_model(auth_token: str, model_name: str, output_dir: str):
     """Download Hugging Face model for offline usage"""
 
@@ -361,20 +397,23 @@ def download_model(auth_token: str, model_name: str, output_dir: str):
         log.info(f"Model directory already exists at: {model_dir_path}")
         if click.confirm("Do you want to re-download the model?"):
             import shutil
+
             shutil.rmtree(model_dir_path)
         else:
             log.info("Using existing model directory")
             return
 
     log.info(f"Downloading model {model_name}...")
-    log.info("This may take several minutes depending on your internet connection and model size.")
+    log.info(
+        "This may take several minutes depending on your internet connection and model size."
+    )
 
     # Download model using huggingface_hub
     downloaded_path = snapshot_download(
         repo_id=model_name,
         token=auth_token,
         local_dir=model_dir_path,
-        local_dir_use_symlinks=False
+        local_dir_use_symlinks=False,
     )
 
     log.info(f"✅ Model successfully downloaded to: {downloaded_path}")
@@ -383,14 +422,18 @@ def download_model(auth_token: str, model_name: str, output_dir: str):
 
     # Create a marker file to indicate successful download
     marker_file = model_dir_path / ".downloaded_successfully"
-    marker_file.write_text(f"Model: {model_name}\nDownloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    marker_file.write_text(
+        f"Model: {model_name}\nDownloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     log.info("📝 Created download completion marker")
 
 
 @cli.command()
 @click.option("--input", required=True, help="Input audio file path")
-@click.option("--output-dir", required=True, help="Output directory for split audio segments")
+@click.option(
+    "--output-dir", required=True, help="Output directory for split audio segments"
+)
 def split_audio(input: str, output_dir: str):
     """Split audio file using speaker diarization"""
 
@@ -424,14 +467,14 @@ def split_audio(input: str, output_dir: str):
     task_id = f"local_{int(time.time())}"
 
     speaker_segments, metadata = processor.process_audio(
-        input_path,
-        task_id,
-        progress_callback
+        input_path, task_id, progress_callback
     )
 
     log.info(f"✅ Audio processing completed!")
     log.info(f"📊 Found {metadata['diarization_results']['total_speakers']} speakers")
-    log.info(f"📊 Generated {metadata['diarization_results']['total_segments']} audio segments")
+    log.info(
+        f"📊 Generated {metadata['diarization_results']['total_segments']} audio segments"
+    )
 
     # Copy segments to specified output directory
     log.info("📁 Copying audio segments to output directory...")
@@ -449,14 +492,13 @@ def split_audio(input: str, output_dir: str):
 
     # Save metadata
     metadata_file = output_path / "metadata.json"
-    with open(metadata_file, 'w') as f:
+    with open(metadata_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
     log.info(f"✅ Split audio completed successfully!")
     log.info(f"📁 Output directory: {output_path}")
     log.info(f"📄 Copied {copied_segments} audio segments")
     log.info(f"📊 Metadata saved to: {metadata_file}")
-
 
 
 if __name__ == "__main__":
