@@ -52,10 +52,7 @@ COPY README.md ./
 COPY pyproject.toml ./
 COPY uv.lock ./
 
-RUN groupadd -r appuser && useradd -m -r -g appuser appuser
-
-RUN mkdir -p storage uploads processed temp models logs assets && \
-    chown -R appuser:appuser /app /home/appuser
+RUN mkdir -p storage uploads processed temp models logs assets
 
 ARG HUGGINGFACE_TOKEN
 ARG DOWNLOAD_MODEL=false
@@ -66,8 +63,6 @@ RUN if [ "$DOWNLOAD_MODEL" = "true" ] && [ -n "$HUGGINGFACE_TOKEN" ]; then \
         echo "Skipping model download during build"; \
     fi && \
     rm -rf /root/.cache/huggingface
-
-USER appuser
 
 EXPOSE 8000
 
