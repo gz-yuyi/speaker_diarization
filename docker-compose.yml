@@ -6,8 +6,6 @@ services:
     image: m.daocloud.io/docker.io/redis:7-alpine
     container_name: speaker_diarization_redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -25,11 +23,10 @@ services:
     container_name: speaker_diarization_api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./assets:/app/assets
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8000
@@ -71,7 +68,6 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./assets:/app/assets
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8000
