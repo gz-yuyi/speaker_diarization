@@ -10,6 +10,7 @@ import uvicorn
 from huggingface_hub import snapshot_download
 
 import src.app
+from src.app import app
 from src.core.config import settings
 from src.core.logger import log
 from src.services.audio_processor import AudioProcessor
@@ -499,6 +500,55 @@ def split_audio(input: str, output_dir: str):
     log.info(f"📁 Output directory: {output_path}")
     log.info(f"📄 Copied {copied_segments} audio segments")
     log.info(f"📊 Metadata saved to: {metadata_file}")
+
+
+@cli.command()
+@click.option(
+    "--output",
+    "-o",
+    default="openapi.json",
+    help="Output file path for OpenAPI specification",
+)
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["json", "yaml"]),
+    default="json",
+    help="Output format (json or yaml)",
+)
+def export_openapi(output: str, format: str):
+    """Export OpenAPI specification"""
+
+    log.info(f"Exporting OpenAPI specification to: {output}")
+    log.info(f"Format: {format}")
+
+    output_path = Path(output)
+
+    try:
+        if format == "json":
+            # Export as JSON
+            openapi_schema = app.openapi()
+            with open(output_path, "w") as f:
+                json.dump(openapi_schema, f, indent=2)
+            log.info(f"✅ OpenAPI specification exported to: {output_path}")
+
+        elif format == "yaml":
+            # Export as YAML
+            import yaml
+            openapi_schema = app.openapi()
+            with open(output_path, "w") as f:
+                yaml.dump(openapi_schema, f, default_flow_style=False)
+            log.info(f"✅ OpenAPI specification exported to: {output_path}")
+
+    except ImportError as e:
+        if format == "yaml":
+            log.error("❌ PyYAML is required for YAML export. Install it with: pip install PyYAML")
+            return
+        else:
+            raise e
+    except Exception as e:
+        log.error(f"❌ Failed to export OpenAPI specification: {e}")
+        return
 
 
 if __name__ == "__main__":
