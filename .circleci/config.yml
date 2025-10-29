@@ -1,0 +1,164 @@
+version: 2.1
+
+# Define reusable commands
+commands:
+  setup-docker:
+    description: "Set up Docker and Buildx"
+    steps:
+      - setup_remote_docker:
+          version: 20.10.18
+          docker_layer_caching: true
+
+  login-to-registry:
+    description: "Log in to Alibaba Cloud Container Registry"
+    parameters:
+      registry:
+        type: string
+      username:
+        type: string
+      password:
+        type: string
+    steps:
+      - run:
+          name: Login to Alibaba Cloud Container Registry
+          command: |
+            echo << parameters.password >> | docker login << parameters.registry >> -u << parameters.username >> --password-stdin
+
+  extract-metadata:
+    description: "Extract Docker image metadata and tags"
+    parameters:
+      registry:
+        type: string
+      namespace:
+        type: string
+      image_name:
+        type: string
+    steps:
+      - run:
+          name: Extract metadata and generate tags
+          command: |
+            # Set default values
+            DOCKER_TAGS=""
+
+            # Branch-based tags
+            if [ -n "$CIRCLE_BRANCH" ]; then
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:$CIRCLE_BRANCH"
+            fi
+
+            # PR-based tags
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:pr-${CIRCLE_PULL_REQUEST##*/}"
+            fi
+
+            # Semver tags for releases
+            if [[ "$CIRCLE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              VERSION=${CIRCLE_TAG#v}
+              MAJOR=$(echo $VERSION | cut -d. -f1)
+              MINOR=$(echo $VERSION | cut -d. -f1-2)
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:$VERSION"
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:$MINOR"
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:$MAJOR"
+            fi
+
+            # Latest tag for main branch
+            if [ "$CIRCLE_BRANCH" = "main" ] && [ -z "$CIRCLE_PULL_REQUEST" ]; then
+              DOCKER_TAGS="$DOCKER_TAGS << parameters.registry >>/<< parameters.namespace >>/<< parameters.image_name >>:latest"
+            fi
+
+            # Remove leading space and set as environment variable
+            DOCKER_TAGS=$(echo $DOCKER_TAGS | sed 's/^ //')
+            echo "export DOCKER_TAGS=\"$DOCKER_TAGS\"" >> $BASH_ENV
+            echo "Generated tags: $DOCKER_TAGS"
+
+  build-and-push:
+    description: "Build and push Docker image"
+    parameters:
+      context:
+        type: string
+        default: "."
+      platforms:
+        type: string
+        default: "linux/amd64"
+      build_args:
+        type: string
+        default: ""
+    steps:
+      - run:
+          name: Build and push Docker image
+          command: |
+            # Parse tags from environment variable
+            IFS=' ' read -ra TAGS_ARRAY <<< "$DOCKER_TAGS"
+
+            # Build the docker build command
+            BUILD_CMD="docker buildx build"
+
+            # Add tags
+            for tag in "${TAGS_ARRAY[@]}"; do
+              BUILD_CMD="$BUILD_CMD --tag $tag"
+            done
+
+            # Add other parameters
+            BUILD_CMD="$BUILD_CMD --platform << parameters.platforms >>"
+            BUILD_CMD="$BUILD_CMD --push"
+            BUILD_CMD="$BUILD_CMD --cache-from type=gha"
+            BUILD_CMD="$BUILD_CMD --cache-to type=gha,mode=max"
+
+            # Add build args if provided
+            if [ -n "<< parameters.build_args >>" ]; then
+              BUILD_CMD="$BUILD_CMD << parameters.build_args >>"
+            fi
+
+            # Add context
+            BUILD_CMD="$BUILD_CMD << parameters.context >>"
+
+            echo "Running: $BUILD_CMD"
+            eval $BUILD_CMD
+
+# Define jobs
+jobs:
+  build:
+    docker:
+      - image: cimg/base:2024.01
+    resource_class: medium
+    steps:
+      - checkout
+      - setup-docker
+      - login-to-registry:
+          registry: "crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com"
+          username: "${ALIYUN_REGISTRY_USERNAME}"
+          password: "${ALIYUN_REGISTRY_PASSWORD}"
+      - extract-metadata:
+          registry: "crpi-lxfoqbwevmx9mc1q.cn-chengdu.personal.cr.aliyuncs.com"
+          namespace: "yuyi_tech"
+          image_name: "speaker_diarization"
+      - build-and-push:
+          context: "."
+          platforms: "linux/amd64"
+          build_args: |
+            --build-arg HUGGINGFACE_TOKEN="${HF_TOKEN}"
+            --build-arg DOWNLOAD_MODEL="${HF_TOKEN:+true}"
+
+# Define workflows
+workflows:
+  version: 2
+  build-and-push:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only:
+                - main
+                - develop
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+      - build:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+      - build:
+          filters:
+            branches:
+              only: main
+          context: pull-request
