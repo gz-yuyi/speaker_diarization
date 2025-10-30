@@ -11,7 +11,19 @@ from src.core.logger import log
 
 task_manager = TaskManager()
 file_manager = FileManager()
-audio_processor = AudioProcessor()
+_audio_processor: AudioProcessor | None = None
+
+
+def get_audio_processor() -> AudioProcessor:
+    """Instantiate AudioProcessor lazily per worker process."""
+
+    global _audio_processor
+
+    if _audio_processor is None:
+        log.info("Initializing AudioProcessor in worker process")
+        _audio_processor = AudioProcessor()
+
+    return _audio_processor
 
 
 class DiarizationTask(Task):
@@ -64,15 +76,23 @@ def process_audio_task(self, task_id: str, audio_file_path: str, callback_url: s
         # Start processing
         task_manager.update_task_status(task_id, "processing", progress=10, message="Starting audio processing...")
 
-        # Process audio
         audio_path = Path(audio_file_path)
+        log.info(f"Loading audio from {audio_path} for task {task_id}")
+
+        # Process audio
         task_manager.set_task_progress(task_id, 20, "Loading audio file...")
+
+        log.info(f"Starting diarization pipeline for task {task_id}")
+
+        audio_processor = get_audio_processor()
 
         speaker_segments, metadata = audio_processor.process_audio(
             audio_path,
             task_id,
             progress_callback=lambda progress, message: task_manager.set_task_progress(task_id, progress, message)
         )
+
+        log.info(f"Diarization pipeline completed for task {task_id}")
 
         # Create result ZIP
         task_manager.set_task_progress(task_id, 90, "Creating result package...")

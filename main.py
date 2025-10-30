@@ -319,8 +319,13 @@ def check_service(api_url):
                 if status_response.status_code == 200:
                     status_data = status_response.json()
                     task_status = status_data.get("status")
+                    progress = status_data.get("progress")
+                    status_message = status_data.get("message")
 
-                    log.info(f"📊 Task status: {task_status}")
+                    progress_str = f" {progress}%" if progress is not None else ""
+                    message_str = f" - {status_message}" if status_message else ""
+
+                    log.info(f"📊 Task status: {task_status}{progress_str}{message_str}")
 
                     if task_status == "completed":
                         log.info("🎉 Task completed successfully!")

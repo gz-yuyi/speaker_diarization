@@ -1,5 +1,7 @@
-import redis
+import os
+import redis  # type: ignore
 from datetime import datetime
+from threading import Lock
 from typing import Dict, Any, Optional
 
 from src.core.config import settings
@@ -8,7 +10,28 @@ from src.core.logger import log
 
 class TaskManager:
     def __init__(self):
-        self.redis_client = redis.from_url(settings.redis_url)
+        self._redis_url = settings.redis_url
+        self._redis_client = None
+        self._process_id = None
+        self._lock = Lock()
+
+    def _get_redis_client(self):
+        """Ensure we always use a Redis connection created in the current process."""
+
+        current_pid = os.getpid()
+
+        if self._redis_client is None or self._process_id != current_pid:
+            with self._lock:
+                # Re-check inside the lock to avoid racing between threads
+                if self._redis_client is None or self._process_id != current_pid:
+                    self._redis_client = redis.from_url(self._redis_url)
+                    self._process_id = current_pid
+
+        return self._redis_client
+
+    @property
+    def redis_client(self):
+        return self._get_redis_client()
 
     def create_task(self, task_id: str, initial_data: Dict[str, Any] = None):
         """Create a new task"""
@@ -24,16 +47,19 @@ class TaskManager:
         if initial_data:
             task_data.update(initial_data)
 
-        self.redis_client.hset(f"task:{task_id}", mapping=task_data)
+        client = self.redis_client
+        client.hset(f"task:{task_id}", mapping=task_data)
         log.info(f"Created task {task_id}")
 
     def task_exists(self, task_id: str) -> bool:
         """Check if task exists"""
-        return self.redis_client.exists(f"task:{task_id}")
+        client = self.redis_client
+        return client.exists(f"task:{task_id}")
 
     def get_task_status(self, task_id: str) -> Dict[str, Any]:
         """Get task status"""
-        task_data = self.redis_client.hgetall(f"task:{task_id}")
+        client = self.redis_client
+        task_data = client.hgetall(f"task:{task_id}")
         if not task_data:
             raise ValueError(f"Task {task_id} not found")
 
@@ -53,7 +79,8 @@ class TaskManager:
         if message:
             update_data["message"] = message
 
-        self.redis_client.hset(f"task:{task_id}", mapping=update_data)
+        client = self.redis_client
+        client.hset(f"task:{task_id}", mapping=update_data)
         log.info(f"Updated task {task_id} status to {status}")
 
     def set_task_progress(self, task_id: str, progress: int, message: str = None):
@@ -66,7 +93,12 @@ class TaskManager:
         if message:
             update_data["message"] = message
 
-        self.redis_client.hset(f"task:{task_id}", mapping=update_data)
+        client = self.redis_client
+        client.hset(f"task:{task_id}", mapping=update_data)
+        log.info(
+            f"Task {task_id} progress updated to {progress}%"
+            + (f" - {message}" if message else "")
+        )
 
     def set_task_error(self, task_id: str, error: str, error_code: str = None):
         """Set task error"""
@@ -79,7 +111,8 @@ class TaskManager:
         if error_code:
             update_data["error_code"] = error_code
 
-        self.redis_client.hset(f"task:{task_id}", mapping=update_data)
+        client = self.redis_client
+        client.hset(f"task:{task_id}", mapping=update_data)
         log.error(f"Task {task_id} failed: {error}")
 
     def set_task_completed(self, task_id: str, metadata: Dict[str, Any] = None):
@@ -92,20 +125,22 @@ class TaskManager:
             "updated_at": datetime.now().isoformat()
         }
 
-        self.redis_client.hset(f"task:{task_id}", mapping=update_data)
+        client = self.redis_client
+        client.hset(f"task:{task_id}", mapping=update_data)
 
         if metadata:
             # Store metadata separately
             metadata_key = f"task_metadata:{task_id}"
-            self.redis_client.set(metadata_key, str(metadata))
+            client.set(metadata_key, str(metadata))
 
         log.info(f"Task {task_id} completed successfully")
 
     def get_active_task_count(self) -> int:
         """Get number of active (pending/processing) tasks"""
         count = 0
-        for key in self.redis_client.scan_iter(match="task:*"):
-            status = self.redis_client.hget(key, "status")
+        client = self.redis_client
+        for key in client.scan_iter(match="task:*"):
+            status = client.hget(key, "status")
             if status and status.decode('utf-8') in ["pending", "processing"]:
                 count += 1
         return count
@@ -116,6 +151,7 @@ class TaskManager:
 
     def delete_task(self, task_id: str):
         """Delete task"""
-        self.redis_client.delete(f"task:{task_id}")
-        self.redis_client.delete(f"task_metadata:{task_id}")
+        client = self.redis_client
+        client.delete(f"task:{task_id}")
+        client.delete(f"task_metadata:{task_id}")
         log.info(f"Deleted task {task_id}")

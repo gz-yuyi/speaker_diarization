@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     supported_formats: str = Field(default="wav,mp3,flac,m4a,ogg")
 
     # Processing
-    max_concurrent_tasks: int = Field(default=10)
-    task_timeout_minutes: int = Field(default=60)
+    max_concurrent_tasks: int = Field(default=500)
+    task_timeout_minutes: int = Field(default=1000)
     result_retention_days: int = Field(default=7)
 
     # Model Configuration

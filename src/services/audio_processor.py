@@ -76,6 +76,9 @@ class AudioProcessor:
             "sample_rate": sample_rate
         })
 
+        if progress_callback:
+            progress_callback(60, "Diarization pipeline finished, parsing results...")
+
         # Get diarization results from newer Pyannote versions
         diarization = diarization_result.speaker_diarization
 
